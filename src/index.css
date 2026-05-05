@@ -1,0 +1,14 @@
+/* src/index.css */
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@300;400;700;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: 'Heebo', sans-serif;
+  background-color: #fcfcfc;
+  margin: 0;
+  padding: 0;
+  direction: rtl; /* הגדרה שכל האתר יהיה מימין לשמאל */
+}
