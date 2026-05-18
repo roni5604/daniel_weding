@@ -35,7 +35,7 @@ const DancingCouple = () => (
 );
 
 function App() {
-  const [images, setImages] = useState([]);
+  const [images, setImages] = useState([]); // [{url, path, id}]
   const [uploading, setUploading] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
@@ -69,28 +69,53 @@ function App() {
     }
   }, [images.length, selectedImageIndex]);
 
-  // העלאה ל-Firebase
-  const handleUpload = async (file) => {
-    if (!file || !file.type.startsWith('image/')) return;
+  // פונקציה חדשה: העלאת מספר תמונות במקביל
+  const handleUploadFiles = async (fileList) => {
+    if (!fileList || fileList.length === 0) return;
     
+    // סינון רק של קבצי תמונה
+    const files = Array.from(fileList).filter(file => file.type.startsWith('image/'));
+    if (files.length === 0) return;
+
     setUploading(true);
     try {
-      const filePath = `wedding/${Date.now()}_${file.name}`;
-      const storageRef = ref(storage, filePath);
-      await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(storageRef);
-      
-      await addDoc(collection(db, "wedding_images"), {
-        url,
-        path: filePath,
-        createdAt: serverTimestamp()
+      // יצירת מערך של בקשות העלאה
+      const uploadPromises = files.map(async (file, index) => {
+        // נוסיף אינדקס לשם כדי שלא ידרסו אחד את השני כשהם עולים בדיוק באותה אלפית שנייה
+        const filePath = `wedding/${Date.now()}_${index}_${file.name}`;
+        const storageRef = ref(storage, filePath);
+        
+        // 1. העלאה ל-Storage
+        await uploadBytes(storageRef, file);
+        // 2. קבלת לינק ציבורי
+        const url = await getDownloadURL(storageRef);
+        
+        // 3. שמירה ב-Firestore
+        await addDoc(collection(db, "wedding_images"), {
+          url,
+          path: filePath,
+          createdAt: serverTimestamp()
+        });
       });
+
+      // המתנה שכל התמונות יסיימו לעלות במקביל
+      await Promise.all(uploadPromises);
+      
     } catch (error) {
       console.error("Upload error:", error);
-      alert("שגיאה בהעלאת התמונה.");
+      alert("שגיאה בהעלאת חלק מהתמונות. אנא נסה שוב.");
     } finally {
       setUploading(false);
+      // איפוס התיבה כדי לאפשר בחירה חוזרת של אותן תמונות
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  const onFileChange = (e) => handleUploadFiles(e.target.files);
+  const onDrop = (e) => {
+    e.preventDefault();
+    setIsDragging(false);
+    handleUploadFiles(e.dataTransfer.files);
   };
 
   // מחיקה בטוחה מ-Firebase (אחסון ומסד יחד)
@@ -100,7 +125,6 @@ function App() {
 
     setDeleting(true);
     try {
-      // 1. מנסים למחוק מהאחסון
       try {
         if (image.path) {
           await deleteObject(ref(storage, image.path));
@@ -111,10 +135,7 @@ function App() {
         console.warn("הקובץ באחסון לא נמצא, ממשיך למחיקה מהמסד...", storageErr);
       }
 
-      // 2. מוחקים מהמסד נתונים
       await deleteDoc(doc(db, "wedding_images", image.id));
-      
-      // 3. סוגרים את התצוגה המוגדלת
       closeLightbox();
     } catch (error) {
       console.error("Delete error:", error);
@@ -122,13 +143,6 @@ function App() {
     } finally {
       setDeleting(false);
     }
-  };
-
-  const onFileChange = (e) => handleUpload(e.target.files[0]);
-  const onDrop = (e) => {
-    e.preventDefault();
-    setIsDragging(false);
-    handleUpload(e.dataTransfer.files[0]);
   };
 
   // פונקציות ניווט מוגנות מפני התנגשויות
@@ -160,7 +174,6 @@ function App() {
       document.body.removeChild(link);
       window.URL.revokeObjectURL(blobUrl);
     } catch (err) {
-      // במקרה של שגיאת CORS, נפתח רגיל
       const link = document.createElement('a');
       link.href = url;
       link.target = "_blank";
@@ -205,7 +218,7 @@ function App() {
       {/* Upload Section */}
       <section className="max-w-6xl mx-auto py-24 px-6 relative z-10">
         <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} className="bg-white rounded-[4rem] p-12 md:p-20 shadow-[0_30px_60px_-15px_rgba(0,0,0,0.1)] border border-stone-50 text-center relative overflow-hidden">
-          <h3 className="text-4xl md:text-6xl font-black mb-6 text-stone-900">הוסיפו תמונה לאלבום</h3>
+          <h3 className="text-4xl md:text-6xl font-black mb-6 text-stone-900">הוסיפו תמונות לאלבום</h3>
           <p className="text-xl md:text-2xl text-stone-500 mb-12">התמונות שלכם יופיעו כאן בגלריה באופן מיידי עבור כולם!</p>
           
           <div 
@@ -215,14 +228,16 @@ function App() {
             onDrop={onDrop}
             onClick={() => !uploading && fileInputRef.current.click()}
           >
-            <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={onFileChange} disabled={uploading} />
+            {/* 🛡️ הוספת תכונת multiple כדי לאפשר בחירת מספר קבצים */}
+            <input type="file" accept="image/*" multiple className="hidden" ref={fileInputRef} onChange={onFileChange} disabled={uploading} />
+            
             {uploading ? (
               <Loader2 className="text-[#d4af37] animate-spin" size={64} />
             ) : (
               <UploadCloud className="text-[#d4af37] animate-pulse" size={64} />
             )}
             <span className="text-2xl md:text-4xl font-black text-stone-700 leading-tight">
-              {uploading ? "מעלה תמונה לאלבום המשותף..." : "לחצו לבחירה או גררו לכאן"}
+              {uploading ? "מעלה תמונות לאלבום המשותף..." : "לחצו לבחירת תמונות או גררו לכאן"}
             </span>
           </div>
         </motion.div>
@@ -252,11 +267,9 @@ function App() {
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.4 }}
-                // ✅ לחיצה על כל נקודה בריבוע התמונה בגלריה תפתח אותה בגדול
                 className="aspect-square overflow-hidden rounded-2xl md:rounded-[1.5rem] shadow-sm hover:shadow-xl border-2 border-white cursor-pointer relative group bg-stone-100"
                 onClick={() => openLightbox(index)}
               >
-                {/* 🛡️ מנגנון חכם: אם תמונה נמחקה מה-Storage אבל נשארה ב-Firestore, האתר פשוט מסתיר אותה */}
                 <img 
                     src={image.url} 
                     alt="Wedding Moment" 
@@ -266,7 +279,7 @@ function App() {
                     }}
                 />
                 
-                {/* Overlay Hover על התמונות הקטנות */}
+                {/* Overlay Hover */}
                 <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-4 backdrop-blur-[2px]">
                   <button 
                     onClick={(e) => { e.stopPropagation(); openLightbox(index); }}
@@ -306,15 +319,13 @@ function App() {
             className="fixed inset-0 z-[200] bg-black/98 flex flex-col items-center justify-center backdrop-blur-2xl" 
             onClick={closeLightbox}
           >
-            {/* סרגל עליון מסודר: מונה תמונות ויציאה */}
+            {/* סרגל עליון */}
             <div className="absolute top-0 w-full p-4 md:p-6 flex justify-between items-center z-10 bg-gradient-to-b from-black/80 to-transparent" onClick={(e) => e.stopPropagation()}>
               
-              {/* מונה תמונות */}
               <div className="text-white/80 font-bold tracking-widest bg-black/40 px-6 py-2 rounded-full backdrop-blur-md border border-white/10 text-sm md:text-base shadow-inner">
                 {selectedImageIndex + 1} / {images.length}
               </div>
 
-              {/* כפתור סגירה משופר: עם כיתוב "חזרה לאתר" */}
               <button 
                 onClick={closeLightbox} 
                 className="flex items-center gap-3 px-6 py-3 bg-white/5 hover:bg-white/15 text-white rounded-full transition-all backdrop-blur-md border border-white/10 shadow-lg"
@@ -355,7 +366,7 @@ function App() {
               </>
             )}
 
-            {/* 🛡️ סרגל לחצנים תחתון יוקרתי קבוע - בולט ונוח מעל כל תמונה */}
+            {/* סרגל לחצנים תחתון */}
             <div className="fixed bottom-0 w-full p-6 md:p-8 flex justify-center gap-6 md:gap-10 z-50 bg-gradient-to-t from-black/90 to-transparent" onClick={(e) => e.stopPropagation()}>
               <button 
                 onClick={() => handleDelete(images[selectedImageIndex])} 
