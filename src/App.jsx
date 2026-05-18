@@ -45,7 +45,7 @@ function App() {
   const { scrollYProgress } = useScroll();
   const scaleX = useSpring(scrollYProgress, { stiffness: 100, damping: 30 });
 
-  // משיכת תמונות מ-Firebase
+  // משיכת תמונות מ-Firebase בזמן אמת
   useEffect(() => {
     if (!db) return;
     
@@ -53,7 +53,7 @@ function App() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const fetchedImages = snapshot.docs.map(doc => ({
         url: doc.data().url,
-        path: doc.data().path, // נתיב לשמירה מחיקה בטוחה
+        path: doc.data().path, 
         id: doc.id 
       }));
       setImages(fetchedImages);
@@ -93,14 +93,14 @@ function App() {
     }
   };
 
-  // מחיקה בטוחה מ-Firebase
+  // מחיקה בטוחה מ-Firebase (אחסון ומסד יחד)
   const handleDelete = async (image) => {
-    if (!db || !image) return;
-    if (!window.confirm("האם אתה בטוח שברצונך למחוק תמונה זו?")) return;
+    if (!db || !storage || !image) return;
+    if (!window.confirm("🗑️ האם אתה בטוח שברצונך למחוק תמונה זו מהאלבום של כולם?")) return;
 
     setDeleting(true);
     try {
-      // 1. מנסים למחוק מהאחסון (עטוף ב-try-catch כדי למנוע קריסה אם הקובץ כבר לא שם)
+      // 1. מנסים למחוק מהאחסון
       try {
         if (image.path) {
           await deleteObject(ref(storage, image.path));
@@ -145,17 +145,32 @@ function App() {
     setSelectedImageIndex((prev) => (prev - 1 + images.length) % images.length); 
   };
 
-  const handleDownloadClick = (e, url) => {
+  // פונקציית הורדה משופרת
+  const handleDownloadClick = async (e, url) => {
     if(e && e.stopPropagation) e.stopPropagation();
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `wedding-photo.jpg`;
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = `wedding-photo-${Date.now()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(blobUrl);
+    } catch (err) {
+      // במקרה של שגיאת CORS, נפתח רגיל
+      const link = document.createElement('a');
+      link.href = url;
+      link.target = "_blank";
+      link.download = `wedding-photo.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
   };
 
-  // תמיכה בחיצים במקלדת
   useEffect(() => {
     const handleKeyDown = (e) => {
       if (selectedImageIndex === null) return;
@@ -194,7 +209,7 @@ function App() {
           <p className="text-xl md:text-2xl text-stone-500 mb-12">התמונות שלכם יופיעו כאן בגלריה באופן מיידי עבור כולם!</p>
           
           <div 
-            className={`border-4 border-dashed rounded-[3rem] p-16 md:p-24 transition-all duration-500 cursor-pointer flex flex-col items-center justify-center gap-8 ${isDragging ? 'border-[#d4af37] bg-[#d4af37]/10 scale-105' : 'border-stone-200 hover:border-[#d4af37] hover:bg-stone-50'}`}
+            className={`border-4 border-dashed rounded-[3rem] p-12 md:p-20 transition-all duration-500 cursor-pointer flex flex-col items-center justify-center gap-6 ${isDragging ? 'border-[#d4af37] bg-[#d4af37]/10 scale-105' : 'border-stone-200 hover:border-[#d4af37] hover:bg-stone-50'}`}
             onDragOver={(e) => { e.preventDefault(); setIsDragging(true); }}
             onDragLeave={() => setIsDragging(false)}
             onDrop={onDrop}
@@ -202,11 +217,11 @@ function App() {
           >
             <input type="file" accept="image/*" className="hidden" ref={fileInputRef} onChange={onFileChange} disabled={uploading} />
             {uploading ? (
-              <Loader2 className="text-[#d4af37] animate-spin" size={80} />
+              <Loader2 className="text-[#d4af37] animate-spin" size={64} />
             ) : (
-              <UploadCloud className="text-[#d4af37] animate-pulse" size={80} />
+              <UploadCloud className="text-[#d4af37] animate-pulse" size={64} />
             )}
-            <span className="text-2xl md:text-5xl font-black text-stone-700 leading-tight">
+            <span className="text-2xl md:text-4xl font-black text-stone-700 leading-tight">
               {uploading ? "מעלה תמונה לאלבום המשותף..." : "לחצו לבחירה או גררו לכאן"}
             </span>
           </div>
@@ -214,7 +229,7 @@ function App() {
       </section>
 
       {/* Gallery Section */}
-      <section className="max-w-[95rem] mx-auto py-32 px-6">
+      <section className="max-w-[100rem] mx-auto py-32 px-4 md:px-6">
         <div className="flex items-center gap-6 mb-20">
           <div className="h-px bg-stone-300 flex-1"></div>
           <h3 className="text-4xl md:text-6xl font-black text-center flex items-center gap-4 text-stone-900">
@@ -229,7 +244,7 @@ function App() {
             <p className="text-stone-400 italic text-2xl font-light">עדיין אין תמונות, תהיו הראשונים!</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-4 md:gap-6">
+          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-7 gap-3 md:gap-5">
             {images.map((image, index) => (
               <motion.div 
                 key={image.id || index} 
@@ -237,13 +252,22 @@ function App() {
                 whileInView={{ opacity: 1, scale: 1 }}
                 viewport={{ once: true }}
                 transition={{ duration: 0.4 }}
-                className="aspect-square overflow-hidden rounded-[1.5rem] shadow-sm hover:shadow-xl border-2 border-white cursor-pointer relative group bg-stone-100"
+                // ✅ לחיצה על כל נקודה בריבוע התמונה בגלריה תפתח אותה בגדול
+                className="aspect-square overflow-hidden rounded-2xl md:rounded-[1.5rem] shadow-sm hover:shadow-xl border-2 border-white cursor-pointer relative group bg-stone-100"
                 onClick={() => openLightbox(index)}
               >
-                <img src={image.url} alt="Wedding Moment" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700" />
+                {/* 🛡️ מנגנון חכם: אם תמונה נמחקה מה-Storage אבל נשארה ב-Firestore, האתר פשוט מסתיר אותה */}
+                <img 
+                    src={image.url} 
+                    alt="Wedding Moment" 
+                    className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+                    onError={(e) => {
+                      e.target.closest('div').style.display = 'none'; 
+                    }}
+                />
                 
-                {/* Overlay Hover */}
-                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-4 backdrop-blur-[2px]">
+                {/* Overlay Hover על התמונות הקטנות */}
+                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex items-center justify-center gap-4 backdrop-blur-[2px]">
                   <button 
                     onClick={(e) => { e.stopPropagation(); openLightbox(index); }}
                     className="p-3 bg-white/90 text-stone-900 rounded-full hover:bg-[#d4af37] hover:text-white transition-colors shadow-lg"
@@ -272,7 +296,7 @@ function App() {
         <p className="text-stone-400">דניאל ושלום נחיאס</p>
       </footer>
 
-      {/* Lightbox Modal (התצוגה המוגדלת) */}
+      {/* Lightbox Modal (תצוגת מסך מלא) */}
       <AnimatePresence>
         {selectedImageIndex !== null && images[selectedImageIndex] && (
           <motion.div 
@@ -282,42 +306,26 @@ function App() {
             className="fixed inset-0 z-[200] bg-black/98 flex flex-col items-center justify-center backdrop-blur-2xl" 
             onClick={closeLightbox}
           >
-            {/* Toolbar עליון */}
-            <div className="absolute top-0 w-full p-6 flex justify-between items-center bg-gradient-to-b from-black/80 to-transparent z-10" onClick={(e) => e.stopPropagation()}>
+            {/* סרגל עליון מסודר: מונה תמונות ויציאה */}
+            <div className="absolute top-0 w-full p-4 md:p-6 flex justify-between items-center z-10 bg-gradient-to-b from-black/80 to-transparent" onClick={(e) => e.stopPropagation()}>
               
-              <div className="flex gap-4">
-                <button 
-                  onClick={() => handleDelete(images[selectedImageIndex])} 
-                  disabled={deleting} 
-                  className="p-3 bg-red-600/90 hover:bg-red-600 text-white rounded-full transition-all flex items-center justify-center shadow-lg"
-                  title="מחק תמונה זו"
-                >
-                  {deleting ? <Loader2 className="animate-spin" size={24} /> : <Trash size={24} />}
-                </button>
-                
-                <a 
-                  href={images[selectedImageIndex].url} 
-                  download={`wedding-photo.jpg`} 
-                  className="p-3 bg-white/10 hover:bg-[#d4af37] text-white rounded-full transition-all flex items-center justify-center shadow-lg border border-white/20"
-                  title="הורד תמונה"
-                >
-                  <Download size={24} />
-                </a>
-              </div>
-
               {/* מונה תמונות */}
-              <div className="text-white/80 font-medium tracking-widest bg-black/40 px-6 py-2 rounded-full backdrop-blur-md border border-white/10">
+              <div className="text-white/80 font-bold tracking-widest bg-black/40 px-6 py-2 rounded-full backdrop-blur-md border border-white/10 text-sm md:text-base shadow-inner">
                 {selectedImageIndex + 1} / {images.length}
               </div>
 
-              {/* כפתור סגירה */}
-              <button onClick={closeLightbox} className="p-3 bg-white/10 hover:bg-white/30 text-white rounded-full transition-all shadow-lg border border-white/20">
+              {/* כפתור סגירה משופר: עם כיתוב "חזרה לאתר" */}
+              <button 
+                onClick={closeLightbox} 
+                className="flex items-center gap-3 px-6 py-3 bg-white/5 hover:bg-white/15 text-white rounded-full transition-all backdrop-blur-md border border-white/10 shadow-lg"
+              >
+                <span className="hidden md:inline font-bold pr-1">חזרה לאתר</span>
                 <X size={28} />
               </button>
             </div>
 
-            {/* התמונה המוגדלת */}
-            <div className="relative w-full h-full flex items-center justify-center px-4 md:px-20 mt-10">
+            {/* התמונה במרכז */}
+            <div className="relative w-full h-full flex items-center justify-center px-4 md:px-20 mt-10 mb-20">
               <motion.img 
                 key={images[selectedImageIndex].id || selectedImageIndex}
                 initial={{ scale: 0.9, opacity: 0 }} 
@@ -329,23 +337,45 @@ function App() {
               />
             </div>
 
-            {/* חצים לדפדוף ימינה ושמאלה */}
+            {/* חצים לדפדוף ימינה ושמאלה בצדדים */}
             {images.length > 1 && (
               <>
                 <button 
                   onClick={showNextImage} 
-                  className="absolute left-4 md:left-10 top-1/2 -translate-y-1/2 text-white/60 hover:text-white p-4 md:p-6 bg-white/5 hover:bg-white/20 rounded-full backdrop-blur-lg transition-all border border-white/10"
+                  className="absolute left-4 md:left-10 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-4 md:p-6 bg-black/20 hover:bg-black/50 rounded-full backdrop-blur-lg transition-all border border-white/10 z-50"
                 >
                   <ChevronLeft size={48} />
                 </button>
                 <button 
                   onClick={showPrevImage} 
-                  className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 text-white/60 hover:text-white p-4 md:p-6 bg-white/5 hover:bg-white/20 rounded-full backdrop-blur-lg transition-all border border-white/10"
+                  className="absolute right-4 md:right-10 top-1/2 -translate-y-1/2 text-white/70 hover:text-white p-4 md:p-6 bg-black/20 hover:bg-black/50 rounded-full backdrop-blur-lg transition-all border border-white/10 z-50"
                 >
                   <ChevronRight size={48} />
                 </button>
               </>
             )}
+
+            {/* 🛡️ סרגל לחצנים תחתון יוקרתי קבוע - בולט ונוח מעל כל תמונה */}
+            <div className="fixed bottom-0 w-full p-6 md:p-8 flex justify-center gap-6 md:gap-10 z-50 bg-gradient-to-t from-black/90 to-transparent" onClick={(e) => e.stopPropagation()}>
+              <button 
+                onClick={() => handleDelete(images[selectedImageIndex])} 
+                disabled={deleting} 
+                className="flex items-center gap-3 px-8 py-4 bg-red-600/90 hover:bg-red-600 text-white rounded-full transition-all shadow-xl border border-red-500/50"
+                title="מחק מהגלריה המשותפת"
+              >
+                {deleting ? <Loader2 className="animate-spin" size={24} /> : <Trash size={24} />}
+                <span className="font-black text-sm md:text-lg">{deleting ? "מוחק..." : "🗑️ למחוק תמונה"}</span>
+              </button>
+              
+              <button 
+                onClick={(e) => handleDownloadClick(e, images[selectedImageIndex].url)} 
+                className="flex items-center gap-3 px-8 py-4 bg-[#d4af37]/90 hover:bg-[#d4af37] text-white rounded-full transition-all shadow-xl border border-[#d4af37]/50"
+                title="שמור לטלפון"
+              >
+                <Download size={24} />
+                <span className="font-black text-sm md:text-lg">📥 לשמור תמונה</span>
+              </button>
+            </div>
 
           </motion.div>
         )}
